@@ -55,6 +55,8 @@
 #include "SensorDeviceAccelerometer.h"
 
 /* additional interface header files */
+#include "Lwm2mObject_AlertNotification.h"
+#include "SntpTime.h"
 #include "XdkSensorHandle.h"
 
 #define ACCELEROMETER_TO_FLOAT(I) ((I) / 1000.0F)
@@ -112,8 +114,24 @@ void SensorDeviceAccelerometer_Activate(bool enable)
     }
 }
 
+/* Simple exponential moving average calculation */
+double expMovingAverage (double avg, double new_sample) {
+	const double sampleCount = 100;
+
+    avg -= avg / sampleCount;
+    avg += new_sample / sampleCount;
+
+    return avg;
+}
+
 void SensorDeviceAccelerometer_Update(enum ProcessingMode mode, bool notify)
 {
+    char buf[100]={0}; // Taken from ButtonsMan.c
+    const double accelThreshold = 0.1;
+    static uint32_t lastAlertTime = 0;
+    const uint32_t minTimeBetweenAlerts = 5;
+    static double avgX = 0.0, avgY = 0.0, avgZ = 0.0;
+
     if (!SensorDeviceData.enabled)
         return;
 
@@ -132,6 +150,34 @@ void SensorDeviceAccelerometer_Update(enum ProcessingMode mode, bool notify)
     {
     	printf("Error in Accel Read \r\n");
     }
+
+    /* Detect accelerometer events */
+    if ((abs(Sample.values[0] - avgX) > accelThreshold) ||
+    	(abs(Sample.values[1] - avgY) > accelThreshold) ||
+		(abs(Sample.values[2] - avgZ) > accelThreshold)) {
+        printf("Accelerometer event detected\n\r");
+    	uint32_t curTime = GetUtcTime();
+    	if (curTime > lastAlertTime + minTimeBetweenAlerts) {
+    		lastAlertTime = curTime;
+        	sprintf(buf,
+        			"{"
+        			"\"alert\": \"accel\", "
+        			"\"x\": %0.2f, "
+        			"\"y\": %0.2f, "
+        			"\"z\": %0.2f, "
+        			"\"avgX\": %0.2f, "
+        			"\"avgY\": %0.2f, "
+        			"\"avgZ\": %0.2f "
+        			"}",
+        			Sample.values[0], Sample.values[1], Sample.values[2], avgX, avgY, avgZ);
+        	ObjectAlertNotification_SetValue(buf);
+    	}
+    }
+
+    avgX = expMovingAverage(avgX, Sample.values[0]);
+    avgY = expMovingAverage(avgY, Sample.values[1]);
+    avgZ = expMovingAverage(avgZ, Sample.values[2]);
+
     if (notify)
     {
         if (SensorDevice_GetDataFloat(&SensorDeviceData, &Sample))

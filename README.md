@@ -15,6 +15,7 @@ Clone this repository and import into the Eclipse workspace as a new project, th
 
 I've taken the source code for this project from the official Bosch XDK development environment v3.1.0. 
 
-So far, there are no changes compared to the official version.
+Additional changes:
+- Accelerometer events are sent out once a threshold is exceeded
 
 
